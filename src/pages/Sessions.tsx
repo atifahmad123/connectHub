@@ -1,0 +1,38 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { CalendarDays, CheckCheck, Clock, Plus } from 'lucide-react';
+import { Avatar, Button, Empty, Field, Modal, PageHead, Pill, Stat } from '../ui';
+import { useApp } from '../store';
+import type { AlumniProfile, SessionRequest } from '../types/domain';
+import { dateLabel, safeExternalUrl, today, uid } from '../utils';
+
+export function SessionRequestForm({ mentor, close }: { mentor: AlumniProfile; close: () => void }) {
+  const s = useApp();
+  return <form onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); s.send({ type: 'REQUEST_SESSION', session: { id: uid(), requesterAlumniId: s.userId, mentorAlumniId: mentor.id, topic: String(f.get('topic')), message: String(f.get('message')), preferredAt: String(f.get('preferredAt')), requestedAt: new Date().toISOString(), status: 'pending' } }, 'Session requested.'); close(); }}>
+    <Field label="Mentor"><input value={mentor.fullName} readOnly/></Field><Field label="Topic"><input name="topic" required placeholder="e.g. Moving into product management"/></Field><Field label="Message"><textarea name="message" required minLength={10} rows={4} placeholder="Introduce yourself and share what you hope to learn."/></Field><Field label="Preferred date & time"><input name="preferredAt" type="datetime-local" min={`${today()}T00:00`} required/></Field><p className="form-note">Times are shown in your device's local time. The mentor will confirm a schedule after accepting.</p><button className="button">Send session request</button>
+  </form>;
+}
+const groups: Record<string, SessionRequest['status'][]> = { Upcoming: ['accepted', 'scheduled'], Pending: ['pending'], Completed: ['completed'], 'Declined / cancelled': ['declined', 'cancelled', 'expired'] };
+export function Sessions() {
+  const s = useApp(), [tab, setTab] = useState('Upcoming'), [scheduling, setScheduling] = useState<string | null>(null), [feedback, setFeedback] = useState<string | null>(null);
+  const filtered = s.mySessions.filter(r => groups[tab].includes(r.status));
+  const feedbackSession = s.mySessions.find(r => r.id === feedback);
+  return <><PageHead eyebrow="ALUMNI TO ALUMNI" title="Mentorship sessions" description="Share experience, find perspective, and agree on a time to connect." action={<Link className="button" to="/alumni/directory"><Plus size={17}/> Find a mentor</Link>}/>
+    <div className="stats-row three"><Stat title="Upcoming conversations" value={s.mySessions.filter(r => ['accepted', 'scheduled'].includes(r.status)).length} caption="Accepted or scheduled" icon={CalendarDays}/><Stat title="Awaiting a response" value={s.mySessions.filter(r => r.status === 'pending').length} caption="Incoming and outgoing requests" icon={Clock}/><Stat title="Conversations completed" value={s.mySessions.filter(r => r.status === 'completed').length} caption="Experience shared between alumni" icon={CheckCheck}/></div>
+    <div className="tabs">{Object.keys(groups).map(key => <button className={key === tab ? 'active' : ''} key={key} onClick={() => setTab(key)}>{key}</button>)}</div>
+    <div className="session-list">{filtered.map(r => { const incoming = r.mentorAlumniId === s.userId, p = s.people.find(p => p.id === (incoming ? r.requesterAlumniId : r.mentorAlumniId))!; return <article className="card session-card" key={r.id}><Avatar name={p.fullName}/><div className="grow"><div className="section-head"><div><Link className="person-name" to={`/alumni/people/${p.id}`}>{p.fullName}</Link><p className="muted small">{incoming ? 'You are the mentor' : 'Your mentor'} · {p.currentRole}</p></div><Pill tone={['accepted', 'scheduled', 'completed'].includes(r.status) ? 'green' : r.status === 'pending' ? 'gold' : 'neutral'}>{r.status}</Pill></div>
+      <h3 className="form-section-title">{r.topic}</h3><p>{r.message}</p><p className="small muted">Preferred: {dateLabel(r.preferredAt)} at {r.preferredAt.slice(11, 16)}</p>
+      {r.scheduledAt && <div className="info-strip"><CalendarDays size={17}/><span>Scheduled: {dateLabel(r.scheduledAt)} at {r.scheduledAt.slice(11, 16)} · Local time</span></div>}
+      {r.status === 'accepted' && !incoming && <p className="small muted">Your mentor will confirm a date and external meeting link.</p>}
+      <div className="section-head"><span className="small muted">Requested {dateLabel(r.requestedAt)}</span><div className="flex-wrap">
+        {r.status === 'pending' && incoming && <><Button secondary onClick={() => s.send({ type: 'RESPOND_SESSION', id: r.id, status: 'declined' }, 'Session request declined.')}>Decline</Button><Button onClick={() => s.send({ type: 'RESPOND_SESSION', id: r.id, status: 'accepted' }, 'Session accepted. Set a schedule in Upcoming.')}>Accept request</Button></>}
+        {r.status === 'accepted' && incoming && <Button onClick={() => setScheduling(r.id)}>Schedule session</Button>}
+        {r.status === 'scheduled' && <>{safeExternalUrl(r.meetingLink || '') && <a className="button secondary" href={safeExternalUrl(r.meetingLink!)} target="_blank" rel="noreferrer">Open meeting link ↗</a>}<Button onClick={() => s.send({ type: 'RESPOND_SESSION', id: r.id, status: 'completed' }, 'Session completed.')}>Mark complete</Button></>}
+        {r.status === 'completed' && <Button secondary onClick={() => setFeedback(r.id)}>{r.feedback?.[s.userId] ? 'Edit feedback' : 'Leave feedback'}</Button>}
+        {['pending', 'accepted', 'scheduled'].includes(r.status) && <button className="text-link" onClick={() => s.send({ type: 'RESPOND_SESSION', id: r.id, status: 'cancelled' }, 'Session cancelled.')}>Cancel session</button>}
+      </div></div>{r.feedback?.[s.userId] && <p className="small muted">Your feedback: {r.feedback[s.userId].rating}/5 · {r.feedback[s.userId].comment}</p>}
+    </div></article>; })}</div>{!filtered.length && <Empty title="No mentorship sessions yet." body="Find a mentor in the directory, or check another session tab."/>}
+    {scheduling && <Modal title="Schedule session" close={() => setScheduling(null)}><form onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); s.send({ type: 'RESPOND_SESSION', id: scheduling, status: 'scheduled', scheduledAt: String(f.get('date')), meetingLink: String(f.get('link')) }, 'Session scheduled. Both alumni can view the details.'); setScheduling(null); }}><Field label="Scheduled date & time"><input type="datetime-local" min={`${today()}T00:00`} required name="date"/></Field><Field label="External meeting link"><input type="url" pattern="https?://.*" required name="link" placeholder="https://meet.google.com/…"/></Field><p className="form-note">Use a Google Meet, Zoom, or Microsoft Teams link. Video calls happen outside Connect-Hub. For a demonstration, use https://example.com/demo-meeting.</p><button className="button">Confirm schedule</button></form></Modal>}
+    {feedback && <Modal title="Session feedback" close={() => setFeedback(null)}><form onSubmit={e => { e.preventDefault(); const f = new FormData(e.currentTarget); s.send({ type: 'SESSION_FEEDBACK', id: feedback, rating: Number(f.get('rating')), comment: String(f.get('comment')) }, 'Feedback saved.'); setFeedback(null); }}><Field label="Rating"><select name="rating" defaultValue={feedbackSession?.feedback?.[s.userId]?.rating || 5}>{[5, 4, 3, 2, 1].map(value => <option key={value} value={value}>{value} / 5</option>)}</select></Field><Field label="Your feedback (optional)"><textarea name="comment" rows={3} defaultValue={feedbackSession?.feedback?.[s.userId]?.comment}/></Field><button className="button">Save feedback</button></form></Modal>}
+  </>;
+}

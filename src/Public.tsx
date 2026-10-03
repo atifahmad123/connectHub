@@ -1,0 +1,41 @@
+import { useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowRight, ArrowUpRight, BookOpen, BriefcaseBusiness, Check, GraduationCap, Megaphone, ShieldCheck, Sparkles, Users } from 'lucide-react';
+import { Avatar, Brand, Field, Pill } from './ui';
+import { useApp } from './store';
+import { ProfileFields, readProfile } from './components/ProfileFields';
+
+export default function Public() {
+  const s = useApp(), location = useLocation(), navigate = useNavigate(), [error, setError] = useState('');
+  const login = location.pathname === '/login', register = location.pathname === '/register';
+  const resubmit = register && new URLSearchParams(location.search).has('resubmit') && s.me.status === 'rejected';
+  const features = [
+    { title: 'Verified alumni community', description: 'University review connects you with graduates who share your academic roots.', icon: ShieldCheck },
+    { title: 'Department & batch discovery', description: 'Find familiar faces and new perspectives by department, graduation year, and expertise.', icon: GraduationCap },
+    { title: 'Structured networking', description: 'Send a connection request and grow your professional network at your own pace.', icon: Users },
+    { title: 'University communication', description: 'Stay informed about announcements, seminars, and alumni events.', icon: Megaphone },
+    ...(s.isEnabled('mentorship') ? [{ title: 'Structured mentorship', description: 'Learn from fellow alumni through focused, scheduled conversations.', icon: BookOpen }] : []),
+    ...(s.isEnabled('opportunities') ? [{ title: 'Career opportunities', description: 'Explore alumni-shared opportunities reviewed by your university.', icon: BriefcaseBusiness }] : []),
+    ...(s.isEnabled('aiMatching') ? [{ title: 'Smarter alumni discovery', description: 'Discover relevant alumni through expertise and career interests.', icon: Sparkles }] : []),
+  ];
+  const p = s.people[0];
+  return <><header className="public-header"><div className="public-identity"><Brand/><span>for {s.config.name}</span></div><div><Link to="/login" className="text-link">Sign in</Link><Link className="button secondary" to="/register">Join alumni network <ArrowRight size={15}/></Link></div></header>
+    {login || register ? <main id="main-content" className={`auth-layout ${register ? 'registration-layout' : ''}`}><div className="auth-story"><span className="eyebrow">{s.config.name.toUpperCase()} · ALUMNI NETWORK</span><h1>Your university journey.<br/><em>A lasting connection.</em></h1><p>{s.config.tagline}</p><div className="avatar-stack">{s.people.slice(0, 4).map(p => <Avatar key={p.id} name={p.fullName}/>)}</div><p className="small">Connect with verified graduates from your university.</p></div>
+      <form className="card auth-form" onSubmit={e => {
+        e.preventDefault();
+        if (login) { s.notify('Prototype mode — no real authentication is performed.'); return; }
+        const profile = readProfile(e.currentTarget, s.config.customProfileFields.map(f => f.key), resubmit ? s.me : undefined, true);
+        const duplicate = s.personas.some(p => p.id !== profile.id && (p.email.toLowerCase() === profile.email.toLowerCase() || (profile.registrationNumber && p.registrationNumber.toLowerCase() === profile.registrationNumber.toLowerCase())));
+        if (duplicate) { setError('This email or registration number already exists in the demo. Use another sample value.'); return; }
+        s.send({ type: 'SUBMIT_REGISTRATION', profile: { ...profile, status: 'pending' } }, resubmit ? 'Registration resubmitted for university review.' : 'Registration submitted for university review.'); navigate('/pending');
+      }}>
+        <h2>{login ? 'Welcome back.' : resubmit ? 'Update your registration.' : 'Join your alumni network.'}</h2><p className="muted">{s.config.name} · Alumni Network</p>
+        {login ? <><Field label="Email address"><input required type="email" autoComplete="email" placeholder="you@example.com"/></Field><Field label="Password"><input type="password" required minLength={8} autoComplete="current-password" placeholder="At least 8 characters"/></Field><div className="section-head"><label className="check-row"><input type="checkbox"/>Remember me</label><button type="button" className="text-link" onClick={() => s.notify('Prototype mode — password recovery is not connected.')}>Forgot password?</button></div></> : <><p className="form-note">{s.config.registration.allowedEmailDomains}</p>{resubmit && <div className="inline-error">Previous review: {s.me.rejectionReason}</div>}<ProfileFields profile={resubmit ? s.me : undefined} registration/></>}
+        {error && <p role="alert" className="inline-error">{error}</p>}<button className="button full-width">{login ? 'Sign in' : resubmit ? 'Resubmit for approval' : 'Submit registration'}<ArrowRight size={16}/></button>
+        <div className="auth-divider">EXPLORING THE PROTOTYPE?</div><Link to={s.state.role === 'admin' ? '/admin/dashboard' : '/alumni/home'} className="button secondary full-width">Skip to Prototype <ArrowRight size={16}/></Link><p className="form-note">No real authentication. Registration changes are held in this browser session only.</p><p className="small center">{login ? 'New to the alumni network?' : 'Already registered?'} <Link className="text-link" to={login ? '/register' : '/login'}>{login ? 'Join now' : 'Sign in'}</Link></p>
+      </form></main> : <main id="main-content" className="landing"><div className="landing-hero"><section><Pill><ShieldCheck size={13}/> {s.config.name}</Pill><h1>Connect with the people who share <span>your university journey.</span></h1><p>An institution-owned alumni community for {s.config.name}. Find your batch, exchange experience, and build lasting professional connections.</p><div className="flex-wrap"><Link to="/register" className="button">Join alumni network <ArrowRight size={18}/></Link><Link to="/login" className="button secondary">Sign in</Link></div><div className="landing-proof"><div className="avatar-stack">{s.people.slice(0, 4).map(p => <Avatar key={p.id} name={p.fullName}/>)}</div><span>Different paths.<br/><strong>One university community.</strong></span></div></section>
+      <section className="landing-visual" aria-label="Alumni community preview"><div className="visual-circle"/><div className="floating-label"><ShieldCheck size={16}/> A shared beginning. A lasting network.</div><div className="landing-profile card"><div className="profile-cover"/><Avatar name={p.fullName} large/><h3>{p.fullName}</h3><p>{p.currentRole} · Class of {p.batchYear}</p><div className="flex-wrap"><Pill tone="green">Verified alumnus</Pill>{s.isEnabled('mentorship') && <Pill>Open to mentorship</Pill>}</div><hr/><div className="landing-connection"><Avatar name={s.people[1].fullName}/><span><b>{s.config.shortName}</b><br/>Your alumni community</span><span className="connected-check"><Check size={18}/></span></div></div><div className="floating-job card"><span className="soft-icon">{s.isEnabled('opportunities') ? <BriefcaseBusiness size={23}/> : <Megaphone size={23}/>}</span><div><strong>{s.isEnabled('opportunities') ? 'Career opportunities' : 'University announcements'}</strong><p>Shared within your community</p></div><ArrowUpRight size={19}/></div></section>
+    </div><section className="discovery"><div><span className="eyebrow">FIND COMMON GROUND</span><h2>Your next connection<br/>starts here.</h2></div><div className="discovery-chips">{['Find alumni by department', 'Connect with your batch', 'Explore career paths', 'Discover experienced alumni', 'University announcements'].map(label => <Link key={label} to="/login">{label}<ArrowUpRight size={16}/></Link>)}</div></section>
+    <section className="landing-features">{features.map(f => <article className="card small-card" key={f.title}><f.icon className="blue-icon" size={25}/><h3>{f.title}</h3><p className="muted">{f.description}</p></article>)}</section><footer className="landing-footer"><Brand/><span>Frontend prototype · Synthetic people & sample content · {s.config.name}</span><Link to="/alumni/home">Explore the prototype <ArrowRight size={14}/></Link></footer></main>}
+  </>;
+}
